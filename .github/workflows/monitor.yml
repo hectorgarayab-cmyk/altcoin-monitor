@@ -1,0 +1,44 @@
+name: Altcoin Monitor
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+    inputs:
+      test:
+        description: "Enviar solo mensaje de prueba a Telegram (1 = si)"
+        default: "0"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: altcoin-monitor
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - run: pip install requests
+
+      - name: Run monitor
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TEST_TELEGRAM: ${{ github.event.inputs.test }}
+        run: python altcoin_monitor.py
+
+      - name: Save state
+        run: |
+          git config user.name "monitor-bot"
+          git config user.email "monitor-bot@users.noreply.github.com"
+          git add monitor_state.json || true
+          git diff --cached --quiet || (git commit -m "update state" && git push)
