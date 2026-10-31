@@ -1,0 +1,37 @@
+name: Monitor Vivo
+
+on:
+  schedule:
+    - cron: "0 14 * * *"   # 8:00 AM Ciudad de México
+  workflow_dispatch:
+
+permissions:
+  actions: read
+
+jobs:
+  heartbeat:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Enviar estado a Telegram
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TG_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TG_CHAT: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          SINCE=$(date -u -d '24 hours ago' +%Y-%m-%dT%H:%M:%SZ)
+          RUNS=$(gh api -X GET "repos/${{ github.repository }}/actions/workflows/monitor.yml/runs" -f created=">=$SINCE" -f per_page=100 --jq '.workflow_runs')
+          TOTAL=$(echo "$RUNS" | jq 'length')
+          OK=$(echo "$RUNS" | jq '[.[] | select(.conclusion=="success")] | length')
+          FAIL=$(echo "$RUNS" | jq '[.[] | select(.conclusion=="failure")] | length')
+
+          if [ "$TOTAL" -eq 0 ]; then
+            MSG="🔴 Monitor sin corridas en 24h. Revisa Actions: puede estar pausado."
+          elif [ "$FAIL" -gt 0 ]; then
+            MSG="🟠 Monitor con fallas: $FAIL de $TOTAL corridas fallaron en 24h."
+          else
+            MSG="🟢 Monitor vivo: $OK corridas exitosas en 24h. Sin alertas = sin señales que cumplan el filtro."
+          fi
+
+          curl -s "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" \
+            -d "chat_id=${TG_CHAT}" \
+            --data-urlencode "text=${MSG}" > /dev/null
